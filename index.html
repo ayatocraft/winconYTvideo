@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>YT Finder — YouTube検索・埋め込み</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark;--bg:#101114;--panel:#1b1d22;--line:#343740;--text:#f4f5f7;--muted:#a9adb8;--accent:#ff4d5a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);min-height:100vh}
+header{padding:26px 20px 18px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#202228,#121317)}
+.wrap{max-width:1100px;margin:auto;padding:0 18px}h1{font-size:clamp(24px,4vw,34px);margin:0 0 7px;letter-spacing:-.04em}header p{margin:0;color:var(--muted)}
+main{padding:24px 0 50px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:18px}
+h2{font-size:17px;margin:0 0 14px}.row{display:flex;gap:10px;flex-wrap:wrap}input,button{font:inherit;border-radius:10px;padding:12px 14px}input{background:#101115;border:1px solid #454954;color:var(--text);min-width:0;flex:1}input:focus{outline:2px solid #ff4d5a;outline-offset:1px}button{border:0;background:var(--accent);color:white;font-weight:700;cursor:pointer}button.secondary{background:#30333b;border:1px solid #484c57}button:hover{filter:brightness(1.1)}.small{font-size:13px;color:var(--muted);line-height:1.6}.notice{padding:12px 14px;border-radius:10px;background:#292a30;color:#d9dbe2;font-size:13px;line-height:1.6;margin-top:12px}
+.results{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:16px}.result{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#141519}.result img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#272930}.result-body{padding:12px}.result h3{font-size:14px;line-height:1.45;margin:0 0 8px}.result p{font-size:12px;color:var(--muted);margin:0 0 10px}.result button{width:100%;padding:9px}
+.player{width:100%;aspect-ratio:16/9;background:#050506;border-radius:12px;overflow:hidden}.player iframe{width:100%;height:100%;border:0}.empty{display:grid;place-items:center;text-align:center;min-height:180px;color:var(--muted);padding:20px}.status{font-size:13px;color:var(--muted);margin-top:10px;overflow-wrap:anywhere}.hidden{display:none!important}footer{text-align:center;color:var(--muted);font-size:12px;padding:0 18px 28px}
+a{color:#ff8b92}
+@media(max-width:600px){.panel{padding:14px}.row>*{width:100%}input{flex:auto}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>YT Finder</h1><p>YouTubeを検索して、動画IDを読み取り、埋め込みプレイヤーで再生する個人用ツール</p></div></header>
+<main class="wrap">
+  <section class="panel">
+    <h2>1. 動画を検索</h2>
+    <form id="searchForm" class="row">
+      <input id="query" type="search" placeholder="動画タイトル・キーワード" aria-label="検索キーワード" required>
+      <button type="submit">検索</button>
+      <button type="button" class="secondary" id="openSearch">YouTubeで検索</button>
+    </form>
+    <p class="small">検索結果をこのページ内に表示するにはYouTube Data APIキーが必要です。キーがない場合は「YouTubeで検索」で検索し、動画URLを下の欄に貼り付けてください。</p>
+    <div id="apiArea" style="margin-top:12px">
+      <details>
+        <summary class="small">任意：YouTube Data APIキーを設定</summary>
+        <div class="row" style="margin-top:10px">
+          <input id="apiKey" type="password" autocomplete="off" placeholder="YouTube Data API v3 キー（HTMLに埋め込み済みの場合は空欄可）" aria-label="APIキー">
+          <button type="button" class="secondary" id="saveKey">この端末で保存</button>
+          <button type="button" class="secondary" id="clearKey">削除</button>
+        </div>
+        <p class="small">HTMLにキーを埋め込む場合は、コード内の <code>EMBEDDED_API_KEY</code> にキーを設定します。HTMLを配布・公開するとキーも閲覧可能になるため、APIキーの制限設定を必ず検討してください。</p>
+      </details>
+    </div>
+    <div id="results" class="results"></div>
+    <div id="searchStatus" class="status" role="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>2. 動画URLまたはIDを入力</h2>
+    <form id="loadForm" class="row">
+      <input id="videoInput" type="text" placeholder="https://www.youtube.com/watch?v=... または youtu.be/... / 動画ID" aria-label="動画URLまたはID" required>
+      <button type="submit">動画を表示</button>
+    </form>
+    <p class="small">対応：通常のYouTube URL、短縮URL、Shorts URL、埋め込みURL、動画ID。</p>
+    <div id="loadStatus" class="status" role="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2 id="playerTitle">3. プレイヤー</h2>
+    <div id="player" class="player"><div class="empty">検索結果から選ぶか、動画URLを入力してください。</div></div>
+    <div id="videoInfo" class="status"></div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="secondary" id="openOriginal" disabled>YouTubeで開く</button>
+      <button type="button" class="secondary" id="copyId" disabled>動画IDをコピー</button>
+      <button type="button" class="secondary" id="clearPlayer">クリア</button>
+    </div>
+    <div class="notice">埋め込みを投稿者が禁止している動画、年齢・地域・アカウントなどの条件がある動画は再生できない場合があります。学校やネットワークのブロックを回避する機能はありません。</div>
+  </section>
+</main>
+<footer>YT Finder · 個人利用向けの非公式ツール。YouTubeの公式サービス・利用規約に従って使用してください。</footer>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  // APIキーをHTMLに埋め込む場合は、下の空文字を自分のキーに置き換えてください。
+  // 注意：HTMLを共有・公開するとキーも見えるため、キーのAPI制限を設定してください。
+  const EMBEDDED_API_KEY = "AIzaSyDdhWHSgAxCR2HZ2dtryS-w63Gz_tQjnA4";
+
+  let currentId = "";
+  const validId = /^[A-Za-z0-9_-]{11}$/;
+
+  function parseVideoId(raw) {
+    const value = raw.trim();
+    if (validId.test(value)) return value;
+    let url;
+    try { url = new URL(value.includes("://") ? value : "https://" + value); }
+    catch { return null; }
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    let id = "";
+    if (host === "youtu.be") id = url.pathname.split("/").filter(Boolean)[0] || "";
+    else if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com" || host === "youtube-nocookie.com") {
+      if (url.pathname === "/watch") id = url.searchParams.get("v") || "";
+      else {
+        const parts = url.pathname.split("/").filter(Boolean);
+        if (["embed", "shorts", "live", "v"].includes(parts[0])) id = parts[1] || "";
+      }
+    }
+    return validId.test(id) ? id : null;
+  }
+
+  function showVideo(id, title = "") {
+    currentId = id;
+    $("player").innerHTML = "";
+    const iframe = document.createElement("iframe");
+    iframe.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(id);
+    iframe.title = title || "YouTube video player";
+    iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+    iframe.allowFullscreen = true;
+    iframe.referrerPolicy = "strict-origin-when-cross-origin";
+    $("player").appendChild(iframe);
+    $("playerTitle").textContent = title ? "3. " + title : "3. プレイヤー";
+    $("videoInfo").textContent = "動画ID：" + id;
+    $("loadStatus").textContent = "動画IDを読み取り、埋め込みプレイヤーに表示しました。";
+    $("openOriginal").disabled = false;
+    $("copyId").disabled = false;
+    $("openOriginal").onclick = () => window.open("https://www.youtube.com/watch?v=" + id, "_blank", "noopener,noreferrer");
+    $("copyId").onclick = async () => {
+      try { await navigator.clipboard.writeText(id); $("loadStatus").textContent = "動画IDをコピーしました。"; }
+      catch { $("loadStatus").textContent = "コピーできませんでした。動画ID：" + id; }
+    };
+  }
+
+  $("loadForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const id = parseVideoId($("videoInput").value);
+    if (!id) { $("loadStatus").textContent = "動画IDを読み取れませんでした。URLまたは11文字の動画IDを確認してください。"; return; }
+    showVideo(id);
+  });
+
+  $("openSearch").addEventListener("click", () => {
+    const q = $("query").value.trim();
+    if (!q) { $("searchStatus").textContent = "検索キーワードを入力してください。"; return; }
+    window.open("https://www.youtube.com/results?search_query=" + encodeURIComponent(q), "_blank", "noopener,noreferrer");
+    $("searchStatus").textContent = "YouTubeの検索結果を新しいタブで開きました。動画URLをコピーして上の欄に貼り付けてください。";
+  });
+
+  $("saveKey").addEventListener("click", () => {
+    const key = $("apiKey").value.trim();
+    if (!key) { $("searchStatus").textContent = "APIキーを入力してください。"; return; }
+    try { localStorage.setItem("ytfinder_api_key", key); $("searchStatus").textContent = "APIキーをこのブラウザに保存しました。"; }
+    catch { $("searchStatus").textContent = "保存できませんでした。このまま検索に使用できます。"; }
+  });
+  $("clearKey").addEventListener("click", () => {
+    localStorage.removeItem("ytfinder_api_key"); $("apiKey").value = ""; $("searchStatus").textContent = "保存したAPIキーを削除しました。";
+  });
+  try { $("apiKey").value = localStorage.getItem("ytfinder_api_key") || ""; } catch {}
+
+  async function apiSearch(q) {
+    const key = $("apiKey").value.trim() || localStorage.getItem("ytfinder_api_key") || EMBEDDED_API_KEY;
+    if (!key) {
+      $("searchStatus").textContent = "APIキーが未設定です。「YouTubeで検索」を使うか、APIキーを設定してください。";
+      return;
+    }
+    $("searchStatus").textContent = "検索中…";
+    $("results").innerHTML = "";
+    try {
+      const url = new URL("https://www.googleapis.com/youtube/v3/search");
+      url.search = new URLSearchParams({part:"snippet",type:"video",maxResults:"12",q,key}).toString();
+      const response = await fetch(url);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "APIエラー (" + response.status + ")");
+      if (!data.items?.length) { $("searchStatus").textContent = "検索結果がありませんでした。"; return; }
+      const frag = document.createDocumentFragment();
+      data.items.forEach(item => {
+        const id = item.id?.videoId;
+        if (!id) return;
+        const snippet = item.snippet || {};
+        const card = document.createElement("article"); card.className = "result";
+        const img = document.createElement("img");
+        img.loading = "lazy"; img.alt = ""; img.src = snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "";
+        const body = document.createElement("div"); body.className = "result-body";
+        const title = document.createElement("h3"); title.textContent = snippet.title || "タイトル不明";
+        const channel = document.createElement("p"); channel.textContent = snippet.channelTitle || "";
+        const button = document.createElement("button"); button.type = "button"; button.textContent = "この動画を再生";
+        button.addEventListener("click", () => { $("videoInput").value = id; showVideo(id, snippet.title || ""); window.scrollTo({top:$("player").getBoundingClientRect().top + window.scrollY - 18,behavior:"smooth"}); });
+        body.append(title, channel, button); card.append(img, body); frag.append(card);
+      });
+      $("results").append(frag);
+      $("searchStatus").textContent = "検索結果：" + data.items.length + "件。動画を選択してください。";
+    } catch (err) {
+      $("searchStatus").textContent = "検索に失敗しました：" + err.message + "。APIキー・API有効化・利用上限を確認してください。";
+    }
+  }
+
+  $("searchForm").addEventListener("submit", e => { e.preventDefault(); const q = $("query").value.trim(); if (q) apiSearch(q); });
+  $("clearPlayer").addEventListener("click", () => {
+    currentId = ""; $("player").innerHTML = '<div class="empty">検索結果から選ぶか、動画URLを入力してください。</div>';
+    $("playerTitle").textContent = "3. プレイヤー"; $("videoInfo").textContent = ""; $("loadStatus").textContent = "";
+    $("openOriginal").disabled = true; $("copyId").disabled = true;
+  });
+})();
+</script>
+</body>
+</html>
